@@ -13,7 +13,7 @@ include(joinpath(@__DIR__, "helper_functions.jl"))
 ############################################################################################################
 
     # Start and end year for the model
-    start_year = 1850
+    start_year = 2005 # TODO:Ana 2005 value set for Assignment 3. Used to be 1850
     end_year   = 2300
 
     # Set RCP Scenario (current options = "rcp85").
@@ -93,10 +93,6 @@ function run_model(CO2_emiss)
     # add for the Climate/Temperature results.
     temp_j1 = filldf, temp_j2 = filldf, CO2_rf = filldf, total_rf = filldf, temperature = filldf)
     
-    # Add anthropogenic CO2 emissions
-    # anthro_CO2 = population[!,"POPULATION"] .* gdp_per_capita[!,"GDP_PER_CAPITA"] .* energy_intensity[!,"ENERGY_INTENSITY"] .* carbon_intensity[!,"CARBON_INTENSITY"]
-
-
     for t in 1:n_steps
         if (t==1)
             output = initialize_model_with_conditions(output, t, CO2_emiss)
@@ -178,7 +174,7 @@ function run_carbon_cycle(output, t, CO2_emiss)
 
     # Calculate accumulated perturbation of carbon stock.
     output[t,"Cacc"] = output[t-1,"Cacc"] + CO2_emiss[t] - (output[t,"CO2"] - output[t-1,"CO2"]) * ppm2gtc
-
+    
     #------------------------------------#
     #---- CLIMATE DYNAMICS EQUATIONS ----#
     #------------------------------------#
@@ -190,8 +186,7 @@ function run_carbon_cycle(output, t, CO2_emiss)
     output[t,"CO2_rf"] = (a1*(CO2_diff)^2 + b1*abs(CO2_diff) + c1*N_hat + 5.36) * log(output[t,"CO2"] / CO2_0)
 
     # Calculate total radiative forcing.
-    output[t,"CO2_anthro"] = anthro_CO2[t]
-    output[t,"total_rf"] = output[t,"CO2_rf"] + exogenous_rf[t] + output[t,"CO2_anthro"] # TODO:ANA should I exclude exogenous_rf?
+    output[t,"total_rf"] = output[t,"CO2_rf"] + exogenous_rf[t]
 
     # Calculate temperature change for the two different thermal response times.
     output[t,"temp_j1"] = output[t-1,"temp_j1"] * exp((-1.0)/d[1]) + 0.5 * q[1] * (output[t-1,"total_rf"] + output[t,"total_rf"]) * (1 - exp((-1.0)/d[1]))
@@ -247,7 +242,7 @@ function setup_shared_socioeconomic_pathways(ssp_scenario)
     energy_interpolator = extrapolate(interpolate(year_ints, energy_vector, Interpolations.FritschCarlsonMonotonicInterpolation()), Line())
     population_interpolator = extrapolate(interpolate(year_ints, population_vector, Interpolations.FritschCarlsonMonotonicInterpolation()), ((Flat(), Line())))
     gdp_interpolator = extrapolate(interpolate(year_ints, gdp_vector, Interpolations.FritschCarlsonMonotonicInterpolation()), Line())
-    emissions_interpolator = extrapolate(interpolate(interp_year_ints, emissions_vector, Interpolations.FritschCarlsonMonotonicInterpolation()), Line())
+    emissions_interpolator = extrapolate(interpolate(year_ints, emissions_vector, Interpolations.FritschCarlsonMonotonicInterpolation()), Line())
 
     # Create vector of years between 2005 and 2300 step size 1
     years_all = [2005:1:2300;]
@@ -268,7 +263,7 @@ function run_shared_socioeconomic_pathways(emissions)
     run_model(emissions)
 end
 
-base_case()
+# base_case()
 
 ssp5_emissions = setup_shared_socioeconomic_pathways("SSP5")
 run_shared_socioeconomic_pathways(ssp5_emissions)
