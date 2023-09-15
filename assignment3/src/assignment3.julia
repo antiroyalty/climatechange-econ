@@ -101,6 +101,7 @@ function run_model(CO2_emiss)
         end
     end
 
+    println("Done! \n")
     return(output)
 end
 
@@ -161,8 +162,8 @@ function run_carbon_cycle(output, t, CO2_emiss)
         output[t,"alpha"] = find_alpha(iIRFT100, a, tau, output[t-1,"alpha"])
     end
 
-    #Calculate updated carbon cycle time constants and CO2 concentrations in 4 carbon pools.
-    # Four carbon pols are sufficient to represent the response of atmospheric CO2 concentration anomalies following a pulse of emission of 100 GtC
+    # Calculate updated carbon cycle time constants and CO2 concentrations in 4 carbon pools.
+    # Four carbon pools are sufficient to represent the response of atmospheric CO2 concentration anomalies following a pulse of emission of 100 GtC
     # (Annual C02 emissions)*(fraction of carbon emissions entering each reservoir) - Ri/(decay time constant for pool)
     for i in 1:4
         output[t, "R"*string(i)] = output[t-1, "R"*string(i)] * exp((-1.0/(tau[i]* output[t,"alpha"]))) + 0.5 * a[i] * (CO2_emiss[t] + CO2_emiss[t-1]) / ppm2gtc
@@ -219,53 +220,90 @@ function base_case()
     return(results)
 end
 
-function setup_shared_socioeconomic_pathways(ssp_scenario)
+function run_shared_socioeconomic_pathways(ssp_scenario)
+    println("Running shared socioeconomic pathways for " * ssp_scenario)
+
     # Read in Shared Socioeconomic Pathways Data
     raw_ssp = CSV.File(normpath(@__DIR__,"..","data", "SSP_IAM_V2_201811.csv"), delim=",", header=1) |> DataFrame
 
-    baseline = filter(row -> (row.MODEL == "REMIND-MAGPIE") & (row.SCENARIO == ssp_scenario*"-Baseline") & (row.REGION == "World"), raw_ssp)
+    model_name = if ssp_scenario == "SSP3" || ssp_scenario == "SSP4"
+        "AIM/CGE" # TODO:ANA => I don't have REMIND-MAGPIE for these scenarios
+    else
+        "REMIND-MAGPIE"
+    end
+
+    baseline = filter(row -> (row.MODEL == model_name) & (row.SCENARIO == ssp_scenario*"-Baseline") & (row.REGION == "World"), raw_ssp)
 
     # Extract row data into data frames
-    energy = filter(row -> (row.VARIABLE == "Final Energy"), baseline)[:,6:16] # EJ/year
-    population = filter(row -> (row.VARIABLE == "Population"), baseline)[:,6:16] # millions
-    gdp = filter(row -> (row.VARIABLE == "GDP|PPP"), baseline)[:,6:16] # Billion $ USD for 2005$
+    # energy = filter(row -> (row.VARIABLE == "Final Energy"), baseline)[:,6:16] # EJ/year
+    # population = filter(row -> (row.VARIABLE == "Population"), baseline)[:,6:16] # millions
+    # gdp = filter(row -> (row.VARIABLE == "GDP|PPP"), baseline)[:,6:16] # Billion $ USD for 2005$
     emissions = filter(row -> (row.VARIABLE == "Emissions|CO2"), baseline)[:,6:16] # Mt CO2/yr
 
     # Convert data frames into vector
-    energy_vector = collect(skipmissing(energy[1, :]))
-    population_vector = collect(skipmissing(population[1, :]))
-    gdp_vector = collect(skipmissing(gdp[1, :]))
+    # energy_vector = collect(skipmissing(energy[1, :]))
+    # population_vector = collect(skipmissing(population[1, :]))
+    # gdp_vector = collect(skipmissing(gdp[1, :]))
     emissions_vector = collect(skipmissing(emissions[1, :]))
 
     year_ints = [2005, 2010, 2020, 2030, 2040, 2050, 2060, 2070, 2080, 2090, 2100]
 
-    energy_interpolator = extrapolate(interpolate(year_ints, energy_vector, Interpolations.FritschCarlsonMonotonicInterpolation()), Line())
-    population_interpolator = extrapolate(interpolate(year_ints, population_vector, Interpolations.FritschCarlsonMonotonicInterpolation()), ((Flat(), Line())))
-    gdp_interpolator = extrapolate(interpolate(year_ints, gdp_vector, Interpolations.FritschCarlsonMonotonicInterpolation()), Line())
+    # energy_interpolator = extrapolate(interpolate(year_ints, energy_vector, Interpolations.FritschCarlsonMonotonicInterpolation()), Line())
+    # population_interpolator = extrapolate(interpolate(year_ints, population_vector, Interpolations.FritschCarlsonMonotonicInterpolation()), ((Flat(), Line())))
+    # gdp_interpolator = extrapolate(interpolate(year_ints, gdp_vector, Interpolations.FritschCarlsonMonotonicInterpolation()), Line())
     emissions_interpolator = extrapolate(interpolate(year_ints, emissions_vector, Interpolations.FritschCarlsonMonotonicInterpolation()), Line())
 
     # Create vector of years between 2005 and 2300 step size 1
     years_all = [2005:1:2300;]
-    interpolated_energy = energy_interpolator.(years_all)
-    interpolated_population = population_interpolator.(years_all)
-    interpolated_gdp = gdp_interpolator.(years_all)
+    # interpolated_energy = energy_interpolator.(years_all)
+    # interpolated_population = population_interpolator.(years_all)
+    # interpolated_gdp = gdp_interpolator.(years_all)
     interpolated_emissions = emissions_interpolator.(years_all)
 
     # Convert emissions to Gt Cacc
     interpolated_emissions = interpolated_emissions * 0.001 * 12 / 44
 
-    interpolated_emissions
+    println("Done setting up scenario for " * ssp_scenario)
+    run_model(interpolated_emissions)
 end
 
-function run_shared_socioeconomic_pathways(emissions)
-    println("Running shared socioeconomic pathways:")
+base_results = run_model(co2_emissions)
 
-    run_model(emissions)
+plot(
+    base_results[:,"years"], 
+    base_results[:,"temperature"],  
+    title = "Global avg temp change in different shared socioeconomic scenarios", 
+    xlab="year", 
+    ylab="degrees C",
+    label = "base rcp86",
+    color="black",
+    linewidth=1
+)
+
+# SSP1 - (green) Sustainability (low challenges to mitigation and adaptation)
+# SSP2 - (orange) Middle of the road
+# SSP3 - (blue) Regional rivalry but no REMIND-MAGPIE model
+# SSP4 - (purple) Inequality but no REMIND-MAGPIE model
+# SSP5 - (red) Fossil-fueled development (high challenges to mitigation, low challenges to adaptaion)
+ssp_scenarios = ["SSP1", "SSP2", "SSP3", "SSP4", "SSP5"]
+colors = ["green", "orange", "blue", "purple", "red"] # Make sure number of colors matches number of scenarios so they don't just turn out black
+
+for (i, ssp_scenario) in enumerate(ssp_scenarios)
+    ssp_result = run_shared_socioeconomic_pathways(ssp_scenario)
+    plot!(
+        ssp_result[:, "years"],
+        ssp_result[:,"temperature"],
+        label="$(ssp_scenario)",
+        color="$(colors[i])"
+    )
 end
 
-# base_case()
+# MeanSqErr= mse(model_runSSP[:,"temperature"], model_runRCP85[:,"temperature"])
+# MeanSqErr = round(MeanSqErr, digits=3)
+# MSEString = "MSE: " * string(MeanSqErr)
 
-ssp5_emissions = setup_shared_socioeconomic_pathways("SSP5")
-run_shared_socioeconomic_pathways(ssp5_emissions)
+savefig("../data/ssp_scenarios.png")
+
+
 
 
