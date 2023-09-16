@@ -1,0 +1,11 @@
+# Directories
+latex/
+data/
+external_data/
+
+# File types
+*.pdf
+*.DS_Store
+
+# Specific files
+helper_functions.jl
